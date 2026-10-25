@@ -347,6 +347,35 @@ class AetherFlowApp(tk.Tk):
         self.dnd_lbl = tk.Label(dnd_box, text="PRIORITY_ONLY", font=("Segoe UI", 11, "bold"), fg=TEXT_PRIMARY, bg=BG_CARD_LIGHT)
         self.dnd_lbl.pack(anchor=tk.W, pady=(4, 0))
 
+        # Adaptation Interval & Gradual Fade Status
+        pacing_box = tk.Frame(act_grid, bg=BG_CARD_LIGHT, padx=10, pady=8)
+        pacing_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        tk.Label(pacing_box, text="ADAPTATION PACING", font=("Segoe UI", 8, "bold"), fg=TEXT_SECONDARY, bg=BG_CARD_LIGHT).pack(anchor=tk.W)
+        self.pacing_lbl = tk.Label(pacing_box, text="Ready (30s interval)", font=("Segoe UI", 11, "bold"), fg=ACCENT_CYAN, bg=BG_CARD_LIGHT)
+        self.pacing_lbl.pack(anchor=tk.W, pady=(4, 0))
+
+        # Interval Quick Selector Toolbar
+        interval_row = tk.Frame(act_card, bg=BG_CARD)
+        interval_row.pack(fill=tk.X, pady=(6, 0))
+        tk.Label(interval_row, text="Change Interval Cooldown:", font=("Segoe UI", 8), fg=TEXT_MUTED, bg=BG_CARD).pack(side=tk.LEFT, padx=(0, 6))
+        for sec in [15, 30, 60, 120]:
+            btn = tk.Button(
+                interval_row,
+                text=f"{sec}s",
+                font=("Segoe UI", 8),
+                bg=BG_CARD_LIGHT,
+                fg=TEXT_PRIMARY,
+                activebackground=BORDER_COLOR,
+                relief=tk.FLAT,
+                padx=6,
+                pady=1,
+                command=lambda s=sec: self._set_adaptation_interval(s)
+            )
+            btn.pack(side=tk.LEFT, padx=2)
+
+        fade_dur = self.config.adaptation.transition_duration_sec
+        tk.Label(interval_row, text=f"• Fade: {fade_dur:.1f}s smooth S-curve", font=("Segoe UI", 8), fg=TEXT_MUTED, bg=BG_CARD).pack(side=tk.RIGHT)
+
         # Ergonomic Advisory
         self.break_banner = tk.Label(
             act_card,
@@ -596,6 +625,19 @@ class AetherFlowApp(tk.Tk):
         self.density_lbl.configure(text=res.ui_density.value)
         self.dnd_lbl.configure(text=res.notification_policy.value)
 
+        # Update Pacing Status
+        if res.cooldown_remaining_sec > 0:
+            self.pacing_lbl.configure(
+                text=f"Locked: {res.cooldown_remaining_sec:.0f}s",
+                fg=ACCENT_AMBER
+            )
+        else:
+            int_sec = int(self.config.adaptation.min_adaptation_interval_sec)
+            self.pacing_lbl.configure(
+                text=f"Ready ({int_sec}s interval)",
+                fg=ACCENT_GREEN
+            )
+
         if res.break_recommendation == BreakRecommendation.MANDATORY_BREAK:
             self.break_banner.configure(
                 text="⚠️ FATIGUE DETECTED — Take an ergonomic 5-minute break now!",
@@ -614,6 +656,14 @@ class AetherFlowApp(tk.Tk):
                 bg=BG_CARD_LIGHT,
                 fg=ACCENT_GREEN
             )
+
+    def _set_adaptation_interval(self, seconds: int) -> None:
+        """Dynamically update the adaptation interval / cooldown period."""
+        self.config.adaptation.min_adaptation_interval_sec = float(seconds)
+        self.adaptation_executor.config.min_adaptation_interval_sec = float(seconds)
+        int_sec = int(seconds)
+        self.pacing_lbl.configure(text=f"Ready ({int_sec}s interval)", fg=ACCENT_GREEN)
+        logger.info(f"Adaptation interval set to {seconds} seconds.")
 
     def on_closing(self) -> None:
         """Safe shutdown when user closes window."""

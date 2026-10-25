@@ -105,12 +105,18 @@ class EngineConfig:
 @dataclass
 class AdaptationConfig:
     """Configuration for workspace actuation and display warmth."""
+    # Specific adaptation interval (minimum cooldown in seconds between environment shifts)
+    min_adaptation_interval_sec: float = 30.0
+
     # Hysteresis: consecutive ticks required before applying environment change
-    hysteresis_ticks: int = 3
+    hysteresis_ticks: int = 4
     
-    # Gamma ramp transition dynamics
-    gamma_transition_steps: int = 12
-    gamma_step_delay_sec: float = 0.05
+    # Gradual fade duration in seconds (prevents sudden brightness/color pops)
+    transition_duration_sec: float = 4.0
+    
+    # Gamma ramp micro-steps (higher = more imperceptible and smooth)
+    gamma_transition_steps: int = 40
+    gamma_step_delay_sec: float = 0.10
     
     # Screen warmth boundaries (in Kelvin)
     min_color_temp_kelvin: int = 2700

@@ -42,10 +42,11 @@ class ExecutionResult:
     summary: str
     hysteresis_count: int
     timestamp: float
+    cooldown_remaining_sec: float = 0.0
 
 
 class AdaptationExecutor:
-    """Dispatches closed-loop workplace adaptations with hysteresis and display safeguards."""
+    """Dispatches closed-loop workplace adaptations with hysteresis, interval pacing, and display safeguards."""
 
     def __init__(self, config: Optional[AdaptationConfig] = None) -> None:
         self.config = config or AdaptationConfig()
@@ -57,9 +58,14 @@ class AdaptationExecutor:
         self.current_notification_policy: NotificationPolicy = NotificationPolicy.ALLOW_ALL
         self.current_break: BreakRecommendation = BreakRecommendation.NONE
         
-        # Hysteresis buffer
+        # Hysteresis buffer & Interval pacing
         self._pending_intent: Optional[AdaptationIntent] = None
         self._hysteresis_counter: int = 0
+        self.last_adaptation_time: float = 0.0
+        
+        # Non-blocking smooth fade thread
+        self._transition_thread: Optional[threading.Thread] = None
+        self._transition_stop = threading.Event()
         
         # Win32 Gamma Ramp Management
         self._hdc = None
@@ -100,7 +106,7 @@ class AdaptationExecutor:
         context_domain: ContextDomain,
         force_immediate: bool = False
     ) -> ExecutionResult:
-        """Evaluate and actuate adaptation profile for current state and domain."""
+        """Evaluate and actuate adaptation profile with interval cooldown and smooth pacing."""
         t_now = time.time()
         intent = ProfileRegistry.get_intent(cognitive_state, context_domain)
 
@@ -112,6 +118,11 @@ class AdaptationExecutor:
                 intent.notification_policy != self.current_notification_policy or
                 intent.break_recommendation != self.current_break
             )
+
+            # Check adaptation interval cooldown
+            elapsed_since_last = t_now - self.last_adaptation_time
+            in_cooldown = (elapsed_since_last < self.config.min_adaptation_interval_sec)
+            remaining_cooldown = max(0.0, self.config.min_adaptation_interval_sec - elapsed_since_last)
 
             if not is_different:
                 # Stable state, reset pending counter
@@ -126,7 +137,23 @@ class AdaptationExecutor:
                     break_recommendation=self.current_break,
                     summary=f"Stable: {intent.action_summary}",
                     hysteresis_count=0,
-                    timestamp=t_now
+                    timestamp=t_now,
+                    cooldown_remaining_sec=remaining_cooldown
+                )
+
+            # If inside specific adaptation interval, hold off any sudden changes
+            if in_cooldown and not force_immediate:
+                return ExecutionResult(
+                    executed=False,
+                    current_kelvin=self.current_kelvin,
+                    target_kelvin=intent.target_kelvin,
+                    ui_density=self.current_ui_density,
+                    notification_policy=self.current_notification_policy,
+                    break_recommendation=self.current_break,
+                    summary=f"Interval locked: {remaining_cooldown:.1f}s remaining before next display update.",
+                    hysteresis_count=self._hysteresis_counter,
+                    timestamp=t_now,
+                    cooldown_remaining_sec=remaining_cooldown
                 )
 
             # Hysteresis debouncing
@@ -152,10 +179,14 @@ class AdaptationExecutor:
                     break_recommendation=self.current_break,
                     summary=f"Debouncing transition ({self._hysteresis_counter}/{self.config.hysteresis_ticks}) to {intent.target_kelvin}K",
                     hysteresis_count=self._hysteresis_counter,
-                    timestamp=t_now
+                    timestamp=t_now,
+                    cooldown_remaining_sec=remaining_cooldown
                 )
 
-            # Execute adaptations
+            # Record adaptation timestamp to lock interval
+            self.last_adaptation_time = t_now
+
+            # Execute adaptations (gradual, non-blocking fade)
             self._apply_display_warmth(intent.target_kelvin)
             self._apply_ui_density(intent.ui_density)
             self._apply_notification_policy(intent.notification_policy)
@@ -178,31 +209,51 @@ class AdaptationExecutor:
                 break_recommendation=self.current_break,
                 summary=intent.action_summary,
                 hysteresis_count=self.config.hysteresis_ticks,
-                timestamp=t_now
+                timestamp=t_now,
+                cooldown_remaining_sec=self.config.min_adaptation_interval_sec
             )
 
     def _apply_display_warmth(self, target_kelvin: int) -> None:
-        """Smoothly step color temperature to target Kelvin value."""
+        """Launch non-blocking background thread to perform an ultra-smooth, gradual S-curve fade."""
         target_kelvin = max(self.config.min_color_temp_kelvin, min(self.config.max_color_temp_kelvin, target_kelvin))
         start_kelvin = self.current_kelvin
 
         if start_kelvin == target_kelvin:
             return
 
-        logger.info(f"Transitioning display warmth: {start_kelvin}K -> {target_kelvin}K")
+        # Signal previous transition to stop
+        self._transition_stop.set()
+        if self._transition_thread and self._transition_thread.is_alive():
+            self._transition_thread.join(timeout=0.2)
+
+        self._transition_stop.clear()
 
         if self.config.dry_run or not self._ramp_supported or self._orig_ramp is None:
+            logger.info(f"[Dry-Run] Transitioning display warmth: {start_kelvin}K -> {target_kelvin}K")
             return
 
-        steps = self.config.gamma_transition_steps
-        delay = self.config.gamma_step_delay_sec
+        def _worker():
+            total_duration = max(0.5, self.config.transition_duration_sec)
+            steps = max(10, self.config.gamma_transition_steps)
+            step_delay = total_duration / steps
 
-        for step in range(1, steps + 1):
-            fraction = step / float(steps)
-            interp_k = int(start_kelvin + (target_kelvin - start_kelvin) * fraction)
-            self._set_hardware_ramp_kelvin(interp_k)
-            if delay > 0 and step < steps:
-                time.sleep(delay)
+            logger.info(f"Fading screen warmth {start_kelvin}K -> {target_kelvin}K smoothly over {total_duration:.1f}s ({steps} micro-steps)...")
+
+            for step in range(1, steps + 1):
+                if self._transition_stop.is_set():
+                    break
+                fraction = step / float(steps)
+                # Cosine / smoothstep S-curve for natural lighting fade
+                smooth_frac = 0.5 * (1.0 - math.cos(fraction * math.pi))
+                interp_k = int(start_kelvin + (target_kelvin - start_kelvin) * smooth_frac)
+                self._set_hardware_ramp_kelvin(interp_k)
+                time.sleep(step_delay)
+
+            if not self._transition_stop.is_set():
+                self._set_hardware_ramp_kelvin(target_kelvin)
+
+        self._transition_thread = threading.Thread(target=_worker, daemon=True, name="SmoothWarmthFader")
+        self._transition_thread.start()
 
     def _set_hardware_ramp_kelvin(self, kelvin: int) -> bool:
         """Construct RGB gamma ramp for given temperature and write to Win32 GDI DC."""

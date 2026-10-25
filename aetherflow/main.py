@@ -236,10 +236,11 @@ class AetherFlowEngine:
               f"Jitter={per_sample.mouse_jitter_index:.3f}")
 
         adapt_mark = "[*]" if exec_result.executed else "[ ]"
+        cd_info = f"Lock: {exec_result.cooldown_remaining_sec:.0f}s" if exec_result.cooldown_remaining_sec > 0 else "Ready"
         print(f"  {dim}Adaptation:{reset} {adapt_mark} Warmth: {bold}{exec_result.current_kelvin}K{reset} | "
               f"UI: {exec_result.ui_density.value} | "
               f"DND: {exec_result.notification_policy.value} | "
-              f"Break: {exec_result.break_recommendation.value}")
+              f"Pacing: {cd_info}")
 
         if exec_result.executed:
             print(f"  {bold}\033[94m-> ACTION:{reset} {exec_result.summary}")
@@ -276,6 +277,10 @@ def build_config(args: argparse.Namespace) -> AetherFlowConfig:
         config.vision.camera_id = args.camera_id
     if args.window_size is not None:
         config.engine.sliding_window_sec = args.window_size
+    if getattr(args, "adaptation_interval", None) is not None:
+        config.adaptation.min_adaptation_interval_sec = args.adaptation_interval
+    if getattr(args, "transition_duration", None) is not None:
+        config.adaptation.transition_duration_sec = args.transition_duration
     if args.debug:
         config.debug = True
 
@@ -293,6 +298,8 @@ def main() -> None:
     parser.add_argument("--window-size", type=float, default=60.0, help="Sliding feature window in seconds (default 60)")
     parser.add_argument("--interval", type=float, default=1.0, help="Event loop tick interval in seconds (default 1.0)")
     parser.add_argument("--iterations", type=int, default=None, help="Stop after N iterations (for testing)")
+    parser.add_argument("--adaptation-interval", type=float, default=None, help="Minimum interval in seconds between display adjustments (default: 30.0)")
+    parser.add_argument("--transition-duration", type=float, default=None, help="Gradual fade duration in seconds (default: 4.0)")
     parser.add_argument("--gui", action="store_true", help="Launch dedicated desktop visual window with live camera feed")
     parser.add_argument("--train", action="store_true", help="Pre-train cognitive classifier model before starting")
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")

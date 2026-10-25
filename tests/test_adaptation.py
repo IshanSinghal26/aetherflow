@@ -98,6 +98,28 @@ class TestAdaptationExecutor:
         assert res.current_kelvin == 2900
         assert res.ui_density == UIDensityMode.RELAXED
 
+    def test_adaptation_interval_cooldown(self):
+        cfg = AdaptationConfig(hysteresis_ticks=1, min_adaptation_interval_sec=30.0, dry_run=True)
+        executor = AdaptationExecutor(cfg)
+
+        # First transition executes
+        res1 = executor.dispatch(CognitiveState.FLOW, ContextDomain.CODE_IDE, force_immediate=False)
+        assert res1.executed is True
+        assert res1.current_kelvin == 4200
+        assert res1.cooldown_remaining_sec == pytest.approx(30.0, abs=1.0)
+
+        # Immediate second transition is prevented by the interval cooldown
+        res2 = executor.dispatch(CognitiveState.FATIGUE, ContextDomain.CODE_IDE, force_immediate=False)
+        assert res2.executed is False
+        assert res2.current_kelvin == 4200
+        assert res2.cooldown_remaining_sec > 25.0
+        assert "Interval locked" in res2.summary
+
+        # Explicit force_immediate overrides cooldown
+        res_forced = executor.dispatch(CognitiveState.FATIGUE, ContextDomain.CODE_IDE, force_immediate=True)
+        assert res_forced.executed is True
+        assert res_forced.current_kelvin == 3000
+
     def test_safe_restore_display(self):
         cfg = AdaptationConfig(dry_run=True)
         executor = AdaptationExecutor(cfg)

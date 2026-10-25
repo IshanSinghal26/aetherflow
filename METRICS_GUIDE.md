@@ -302,6 +302,42 @@ Candlelight      Amber       Paper Warm     Neutral       Daylight
 
 ---
 
+### 5.5 Adaptation Interval Pacing & Anti-Flicker Fade Physics
+
+To ensure screen adjustments never disrupt the user's creative flow with sudden pops or frequent adjustments, AetherFlow enforces a **two-tier anti-flicker protection system**:
+
+```text
+  State Change Detected
+          │
+          ▼
+┌──────────────────────────────────────────────┐
+│  STAGE 1: ADAPTATION INTERVAL LOCK (30s-60s) │
+│  • Enforces a strict minimum cooldown        │
+│  • Suppresses any changes until the previous │
+│    interval has fully elapsed                │
+│  • Requires sustained state consistency      │
+└─────────────────────┬────────────────────────┘
+                      │ (Interval elapsed & state sustained)
+                      ▼
+┌──────────────────────────────────────────────┐
+│  STAGE 2: GRADUAL S-CURVE FADE (4.0s)        │
+│  • 40 micro-steps across 4.0 seconds         │
+│  • Cosine ease-in / ease-out smoothstep:     │
+│    factor = [1 - cos(π · t / T)] / 2         │
+│  • Imperceptible 40-50K micro-increments     │
+│  • ZERO visual pop, glare, or jarring shift  │
+└──────────────────────────────────────────────┘
+```
+
+1. **Specific Adaptation Interval Cooldown (`min_adaptation_interval_sec`)**:
+   - Minimum interval that must elapse between two screen brightness/warmth adjustments (default: `30.0` seconds; configurable to `60.0s`, `120.0s`, or custom via CLI `--adaptation-interval` or GUI buttons).
+   - Prevents rapid screen changes caused by transient tasks (e.g., checking Slack for 5 seconds will not disrupt your 4200K IDE focus).
+2. **Cosine S-Curve Gradual Fade (`transition_duration_sec`)**:
+   - Screen warmth is stepped smoothly over 4.0 seconds across 40 micro-increments in a background non-blocking thread.
+   - The cosine curve eases in gently, sweeps softly, and eases out smoothly, mimicking natural twilight. The human visual cortex adapts seamlessly without registering an abrupt flash.
+
+---
+
 ## Summary Reference Table
 
 | Metric | Normal Alert Range | Flow Indicator | Overload Indicator | Fatigue Indicator |
@@ -315,3 +351,4 @@ Candlelight      Amber       Paper Warm     Neutral       Daylight
 | **Flight Time** | `200 - 320 ms` | `140 - 200 ms` (rhythmic) | `250 - 500 ms` (erratic) | `> 450 ms` |
 | **Mouse Jitter** | `0.08 - 0.18` | `< 0.10` (calm) | `> 0.35` (chaotic) | `0.15 - 0.25` (slow) |
 | **Typing Cadence**| `100 - 180 KPM`| `> 200 KPM` | `Choppy bursts` | `< 60 KPM` |
+| **Adaptation Pacing**| `30s Cooldown`| `Locked during flow` | `Hold until sustained`| `Soft 4.0s fade` |
