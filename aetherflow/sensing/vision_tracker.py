@@ -117,6 +117,7 @@ class VisionTracker:
         self._in_blink = False
         self._blink_start_time = 0.0
         self._total_blinks = 0
+        self._baseline_open_ear: float = 0.30  # Adaptive baseline calibrated for glasses & individual geometry
         
         # MediaPipe landmarker instance
         self._landmarker = None
@@ -178,11 +179,19 @@ class VisionTracker:
         ear_right = calculate_ear(landmarks, self.RIGHT_EYE_INDICES, w, h)
         ear_mean = (ear_left + ear_right) / 2.0
 
+        # Adaptive baseline calibration (vital for eyeglasses/specs & diverse eye shapes)
+        if not self._in_blink and ear_mean > 0.18:
+            self._baseline_open_ear = 0.96 * self._baseline_open_ear + 0.04 * ear_mean
+
+        # Dynamic thresholds scaled to user's personalized open-eye baseline
+        effective_blink_thresh = max(0.14, min(self.config.ear_blink_threshold, self._baseline_open_ear * 0.72))
+        effective_perclos_thresh = max(0.13, min(self.config.ear_perclos_threshold, self._baseline_open_ear * 0.68))
+
         # Store EAR history for PERCLOS
         self._ear_history.append((t_now, ear_mean))
 
-        # 2. Blink detection state machine
-        is_blinking = ear_mean < self.config.ear_blink_threshold
+        # 2. Blink detection state machine with adaptive threshold
+        is_blinking = ear_mean < effective_blink_thresh
         if is_blinking and not self._in_blink:
             # Transition to blink
             self._in_blink = True
@@ -209,7 +218,7 @@ class VisionTracker:
             self._ear_history.popleft()
         
         if self._ear_history:
-            closed_samples = sum(1 for _, ear in self._ear_history if ear < self.config.ear_perclos_threshold)
+            closed_samples = sum(1 for _, ear in self._ear_history if ear < effective_perclos_thresh)
             perclos = closed_samples / len(self._ear_history)
         else:
             perclos = 0.0

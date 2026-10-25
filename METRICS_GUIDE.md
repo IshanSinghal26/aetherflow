@@ -125,6 +125,26 @@ Captured non-invasively via standard RGB webcam at 30 FPS using MediaPipe FaceLa
 
 ---
 
+### 1.8 Compatibility with Spectacles, Eyeglasses & Anti-Glare Lenses
+
+**Yes, AetherFlow is fully engineered to work with spectacles (glasses).** It accommodates eyewear through a three-layer architectural approach:
+
+1. **3D Dense Mesh Mesh Reconstruction (MediaPipe FaceLandmarker)**:
+   - MediaPipe's underlying deep learning neural network was trained on vast, heterogeneous datasets including prescription glasses, reading glasses, wire frames, and acetate/horn frames.
+   - The model infers 478 3D landmarks based on holistic facial structure (brow ridges, cheekbones, nose bridge), allowing eyelid contours and iris centers to remain reliably detected through transparent lenses.
+
+2. **Adaptive Personalized EAR Baseline Calibration**:
+   - Because spectacles (especially thick frames or high-refraction prescription lenses) can subtly alter a user's resting open-eye aperture (e.g. $0.24$ instead of $0.30$), AetherFlow uses an **adaptive exponential moving baseline** ($\text{EAR}_{\text{baseline}}$):
+     $$\text{Threshold}_{\text{blink}} = \max\left(0.14, \min(0.21, \text{EAR}_{\text{baseline}} \times 0.72)\right)$$
+     $$\text{Threshold}_{\text{PERCLOS}} = \max\left(0.13, \min(0.20, \text{EAR}_{\text{baseline}} \times 0.68)\right)$$
+   - This scales blink and drowsiness triggers dynamically to the user's specific facial geometry and frame style, preventing false blink detections from lens reflections or frame shadows.
+
+3. **Multi-Modal Non-Optical Sensor Fusion (Fail-Safe)**:
+   - If severe glare, tinted sunglasses, or unusual lighting momentarily occlude the eyes, AetherFlow's machine learning classifier does not crash or stall.
+   - The engine seamlessly relies on **Layer 1 Peripheral Kinematics** (keystroke dwell time, flight time, typing burstiness, and mouse jitter), which operate with 100% optical independence.
+
+---
+
 ## 2. Peripheral Interaction Kinematics
 
 Captured via low-level OS event hooks (`pynput`). **STRICT ZERO-KEYLOGGING POLICY**: Keys are never decoded to characters, strings, or text. Only timestamps ($t$) and physical durations ($\Delta t$) are stored.
