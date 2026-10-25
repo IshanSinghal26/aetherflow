@@ -106,6 +106,8 @@ class VisionTracker:
         
         # State buffers
         self._latest_sample = VisionSample(timestamp=time.time())
+        self._latest_raw_frame: Optional[np.ndarray] = None
+        self._latest_annotated_frame: Optional[np.ndarray] = None
         self._blink_timestamps: collections.deque[float] = collections.deque(maxlen=300)
         self._blink_durations_ms: collections.deque[float] = collections.deque(maxlen=100)
         self._ear_history: collections.deque[Tuple[float, float]] = collections.deque(maxlen=1800) # (timestamp, ear)
@@ -239,6 +241,14 @@ class VisionTracker:
         # 7. Head pose estimation
         pitch, yaw, roll = self._estimate_head_pose(landmarks, w, h)
 
+        # 8. Render visual annotations on frame for dedicated window/GUI
+        annotated = frame_bgr.copy()
+        self._annotate_face(
+            annotated, landmarks, w, h,
+            is_blinking, ear_mean, blink_rate_bpm,
+            gaze_stability, pitch, yaw, roll
+        )
+
         sample = VisionSample(
             timestamp=t_now,
             face_detected=True,
@@ -258,6 +268,8 @@ class VisionTracker:
 
         with self._lock:
             self._latest_sample = sample
+            self._latest_raw_frame = frame_bgr
+            self._latest_annotated_frame = annotated
 
         return sample
 
@@ -345,6 +357,10 @@ class VisionTracker:
         while self._blink_timestamps and self._blink_timestamps[0] < cutoff_60s:
             self._blink_timestamps.popleft()
 
+        synth_frame = self._draw_synthetic_avatar(
+            t, ear, is_blink, float(max(8, len(self._blink_timestamps))), 0.88
+        )
+
         sample = VisionSample(
             timestamp=t,
             face_detected=True,
@@ -363,12 +379,112 @@ class VisionTracker:
         )
         with self._lock:
             self._latest_sample = sample
+            self._latest_raw_frame = synth_frame
+            self._latest_annotated_frame = synth_frame
         return sample
+
+    def _annotate_face(
+        self,
+        frame: np.ndarray,
+        landmarks,
+        w: int,
+        h: int,
+        is_blinking: bool,
+        ear: float,
+        blink_rate: float,
+        gaze_stab: float,
+        pitch: float,
+        yaw: float,
+        roll: float
+    ) -> None:
+        """Draw eye contours, irises, head pose axis, and biometric telemetry on frame."""
+        eye_color = (0, 0, 255) if is_blinking else (0, 255, 128)
+        thickness = 2 if is_blinking else 1
+
+        for eye_indices in [self.LEFT_EYE_INDICES, self.RIGHT_EYE_INDICES]:
+            pts = np.array([
+                [int(landmarks[idx].x * w), int(landmarks[idx].y * h)]
+                for idx in eye_indices
+            ], dtype=np.int32)
+            cv2.polylines(frame, [pts], isClosed=True, color=eye_color, thickness=thickness)
+
+        if len(landmarks) > self.RIGHT_IRIS_CENTER:
+            l_iris = landmarks[self.LEFT_IRIS_CENTER]
+            r_iris = landmarks[self.RIGHT_IRIS_CENTER]
+            cv2.circle(frame, (int(l_iris.x * w), int(l_iris.y * h)), 3, (255, 0, 255), -1)
+            cv2.circle(frame, (int(r_iris.x * w), int(r_iris.y * h)), 3, (255, 0, 255), -1)
+
+        nose = landmarks[1]
+        nx, ny = int(nose.x * w), int(nose.y * h)
+        cv2.circle(frame, (nx, ny), 4, (0, 255, 255), -1)
+        ray_len = 35
+        rad_pitch = math.radians(pitch)
+        rad_yaw = math.radians(yaw)
+        dx = int(-ray_len * math.sin(rad_yaw))
+        dy = int(ray_len * math.sin(rad_pitch))
+        cv2.line(frame, (nx, ny), (nx + dx, ny + dy), (0, 255, 255), 2)
+
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (w, 42), (20, 24, 33), -1)
+        cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
+
+        blink_text = "BLINK" if is_blinking else "OPEN"
+        blink_color = (0, 0, 255) if is_blinking else (0, 255, 128)
+        cv2.putText(frame, f"EAR: {ear:.2f}", (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        cv2.putText(frame, f"[{blink_text}]", (135, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, blink_color, 2)
+        cv2.putText(frame, f"BPM: {blink_rate:.0f}", (245, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (220, 220, 220), 1)
+        cv2.putText(frame, f"Gaze: {int(gaze_stab*100)}%", (365, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (100, 230, 255), 1)
+
+    def _draw_synthetic_avatar(self, t: float, ear: float, is_blink: bool, bpm: float, gaze: float) -> np.ndarray:
+        """Render animated stylized avatar frame for synthetic / camera-off mode."""
+        w, h = self.config.target_width, self.config.target_height
+        img = np.full((h, w, 3), (25, 28, 38), dtype=np.uint8)
+
+        cx, cy = w // 2, h // 2
+        cv2.ellipse(img, (cx, cy), (110, 150), 0, 0, 360, (45, 52, 70), -1)
+        cv2.ellipse(img, (cx, cy), (110, 150), 0, 0, 360, (70, 80, 105), 2)
+
+        eye_y = cy - 25
+        eye_w = 32
+        eye_h = int(22 * (ear / 0.30)) if not is_blink else 2
+
+        for eye_x in [cx - 45, cx + 45]:
+            if is_blink:
+                cv2.line(img, (eye_x - eye_w // 2, eye_y), (eye_x + eye_w // 2, eye_y), (0, 0, 255), 3)
+            else:
+                cv2.ellipse(img, (eye_x, eye_y), (eye_w // 2, max(2, eye_h // 2)), 0, 0, 360, (240, 240, 245), -1)
+                cv2.ellipse(img, (eye_x, eye_y), (eye_w // 2, max(2, eye_h // 2)), 0, 0, 360, (0, 255, 128), 2)
+                pupil_dx = int(5.0 * math.sin(t * 1.2))
+                cv2.circle(img, (eye_x + pupil_dx, eye_y), 5, (20, 20, 25), -1)
+                cv2.circle(img, (eye_x + pupil_dx, eye_y), 2, (255, 0, 255), -1)
+
+        cv2.line(img, (cx, cy - 5), (cx - 6, cy + 25), (100, 115, 140), 2)
+        cv2.line(img, (cx - 6, cy + 25), (cx + 8, cy + 25), (100, 115, 140), 2)
+        cv2.ellipse(img, (cx, cy + 65), (28, 10), 0, 0, 180, (100, 115, 140), 2)
+
+        overlay = img.copy()
+        cv2.rectangle(overlay, (0, 0), (w, 42), (20, 24, 33), -1)
+        cv2.addWeighted(overlay, 0.85, img, 0.15, 0, img)
+
+        blink_text = "BLINK" if is_blink else "OPEN"
+        blink_color = (0, 0, 255) if is_blink else (0, 255, 128)
+        cv2.putText(img, f"EAR: {ear:.2f}", (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        cv2.putText(img, f"[{blink_text}]", (135, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, blink_color, 2)
+        cv2.putText(img, f"BPM: {bpm:.0f}", (245, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (220, 220, 220), 1)
+        cv2.putText(img, f"Gaze: {int(gaze*100)}%", (365, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (100, 230, 255), 1)
+        cv2.putText(img, "[SIMULATED AVATAR]", (w - 180, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (120, 130, 150), 1)
+        return img
 
     def get_latest_sample(self) -> VisionSample:
         """Return the most recent processed vision sample in a thread-safe manner."""
         with self._lock:
             return self._latest_sample
+
+    def get_latest_frame(self) -> Tuple[Optional[np.ndarray], VisionSample]:
+        """Return the most recent annotated frame and sample in a thread-safe manner."""
+        with self._lock:
+            frame = self._latest_annotated_frame.copy() if self._latest_annotated_frame is not None else None
+            return frame, self._latest_sample
 
     def start(self) -> None:
         """Start non-blocking camera capture worker thread."""

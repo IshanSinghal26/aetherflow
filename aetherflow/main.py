@@ -293,6 +293,7 @@ def main() -> None:
     parser.add_argument("--window-size", type=float, default=60.0, help="Sliding feature window in seconds (default 60)")
     parser.add_argument("--interval", type=float, default=1.0, help="Event loop tick interval in seconds (default 1.0)")
     parser.add_argument("--iterations", type=int, default=None, help="Stop after N iterations (for testing)")
+    parser.add_argument("--gui", action="store_true", help="Launch dedicated desktop visual window with live camera feed")
     parser.add_argument("--train", action="store_true", help="Pre-train cognitive classifier model before starting")
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
     
@@ -306,6 +307,12 @@ def main() -> None:
         train_and_serialize(samples_per_class=800, output_dir=DATA_DIR)
 
     config = build_config(args)
+
+    if args.gui:
+        from aetherflow.gui import run_gui
+        run_gui(config)
+        return
+
     engine = AetherFlowEngine(config)
     engine.run_loop(interval_sec=args.interval, max_iterations=args.iterations)
 

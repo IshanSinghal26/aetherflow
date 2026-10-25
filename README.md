@@ -167,16 +167,28 @@ Generate synthetic physiological and behavioral telemetry, evaluate classificati
 python -m aetherflow.simulation.train_synthetic --samples 800
 ```
 
-### 2. Launch AetherFlow Live Engine
-Start the full neuroadaptive closed loop with active webcam and peripheral tracking:
+### 2. Launch Dedicated Visual Window (Camera Viewport + Real-Time HUD)
+To launch the dedicated desktop GUI window with the live webcam stream, eye tracking overlay, and real-time dashboard:
+
+```bash
+# Launch GUI with live camera feed and neuroadaptive control room
+python -m aetherflow.gui
+
+# Or via main orchestrator
+python -m aetherflow.main --gui
+```
+
+### 3. Launch Headless / Terminal Engine
+Start the background closed loop in terminal-only mode:
 
 ```bash
 python -m aetherflow.main
 ```
 
-### 3. Command-Line Options
+### 4. Command-Line Options
 | Flag | Description |
 | :--- | :--- |
+| `--gui` | **Launch dedicated desktop visual window with live camera feed** |
 | `--dry-run` | Run in simulation mode without writing to hardware display gamma ramp |
 | `--synthetic-sensing` | Generate simulated biometric telemetry (for headless CI or machines without webcam) |
 | `--camera-id <ID>` | Specify webcam index (default: `0`) |
@@ -186,10 +198,23 @@ python -m aetherflow.main
 | `--train` | Automatically pre-train model before starting the engine |
 | `--debug` | Output detailed internal engine diagnostics |
 
-**Example (Headless / Safe Simulation):**
+**Example (Dedicated Visual Window in Simulation Mode):**
 ```bash
-python -m aetherflow.main --dry-run --synthetic-sensing --iterations 10
+python -m aetherflow.main --gui --dry-run
 ```
+
+---
+
+## 7. Telemetry & Metrics Reference Guide
+
+For an in-depth breakdown of every biometric, kinematic, and environmental metric, see the dedicated guide:
+👉 **[`METRICS_GUIDE.md`](./METRICS_GUIDE.md)**
+
+It provides full definitions, physiological foundations, formulas, alert thresholds, and cognitive implications for:
+- **Ocular Biometrics**: Eye Aspect Ratio (EAR), Blink Rate (BPM), PERCLOS, Mean Blink Duration, Gaze Stability, Head Pose.
+- **Peripheral Kinematics**: Dwell Time, Flight Time, Cadence (KPM/WPM), Burstiness, Mouse Jitter Index, Path Tortuosity.
+- **Dynamic Slopes**: Eyelid Droop Trend, Jitter Escalation Slope.
+- **Workspace Adaptations**: Planckian Blackbody Screen Warmth (Kelvin), UI Density Modes, Notification Policies, and Ergonomic Advisories.
 
 ---
 
@@ -243,6 +268,7 @@ aetherflow/
 │   │   ├── __init__.py
 │   │   └── train_synthetic.py        # Telemetry generator, ML trainer, and evaluation reporter
 │   │
+│   ├── gui.py                        # Dedicated real-time desktop GUI with camera viewport & HUD
 │   └── main.py                       # Non-blocking orchestrator, event loop & console dashboard
 │
 ├── data/                             # Serialized models and assets
@@ -259,6 +285,7 @@ aetherflow/
 │   ├── test_adaptation.py
 │   └── test_end_to_end.py
 │
+├── METRICS_GUIDE.md                  # Comprehensive breakdown of all telemetry metrics
 ├── requirements.txt                  # Pinned production dependencies
 └── README.md                         # Architecture, mathematics, and operational documentation
 ```
