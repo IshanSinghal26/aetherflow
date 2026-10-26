@@ -42,6 +42,7 @@ from aetherflow.engine.feature_buffer import FeatureBuffer
 from aetherflow.sensing.peripheral_tracker import PeripheralTracker
 from aetherflow.sensing.vision_tracker import VisionTracker
 from aetherflow.simulation.train_synthetic import train_and_serialize
+from aetherflow.storage import SessionStore
 
 logger = logging.getLogger("aetherflow")
 
@@ -73,12 +74,21 @@ class SessionAnalytics:
 class AetherFlowEngine:
     """Master orchestrator integrating sensing, ML inference, context detection, and actuation."""
 
-    def __init__(self, config: Optional[AetherFlowConfig] = None) -> None:
+    def __init__(
+        self,
+        config: Optional[AetherFlowConfig] = None,
+        quiet_mode: bool = False,
+        auto_report: bool = False
+    ) -> None:
         self.config = config or AetherFlowConfig()
         self.config.ensure_directories()
         
         self.running = False
         self.analytics = SessionAnalytics.create()
+        self.session_store = SessionStore()
+        self.session_id: Optional[str] = None
+        self.quiet_mode = quiet_mode
+        self.auto_report = auto_report
 
         logger.info("Initializing AetherFlow layers...")
 
@@ -111,30 +121,44 @@ class AetherFlowEngine:
         sys.exit(0)
 
     def start(self) -> None:
-        """Start background sensors and feature intake."""
+        """Start background sensors, session persistence, and feature intake."""
         self.running = True
         self.analytics = SessionAnalytics.create()
+        self.session_id = self.session_store.start_session()
         self.vision_tracker.start()
         self.peripheral_tracker.start()
-        logger.info("AetherFlow engine initialized and active.")
+        logger.info(f"AetherFlow engine active. Session: {self.session_id}")
 
     def stop(self) -> None:
-        """Stop sensors, restore display gamma ramp, and print session metrics."""
+        """Stop sensors, close persistent session, and restore display gamma ramp."""
         if not self.running:
             return
         self.running = False
         self.vision_tracker.stop()
         self.peripheral_tracker.stop()
+        if self.session_id:
+            self.session_store.close_session(self.session_id)
         self.adaptation_executor.restore_display()
         logger.info("AetherFlow stopped successfully.")
 
     def run_loop(self, interval_sec: float = 1.0, max_iterations: Optional[int] = None) -> None:
         """Main non-blocking closed-loop orchestration cycle."""
         self.start()
-        print("\n" + "=" * 70)
-        print("  AETHERFLOW -- Local Neuroadaptive Workspace Engine Active")
-        print("  100% Local Inference | Privacy Preserving | Closed-Loop Actuation")
-        print("=" * 70 + "\n")
+        if not self.quiet_mode:
+            print("\n" + "=" * 70)
+            print("  AETHERFLOW -- Local Neuroadaptive Workspace Engine Active")
+            print("  100% Local Inference | Privacy Preserving | Closed-Loop Actuation")
+            print("=" * 70 + "\n")
+        else:
+            print("\n" + "=" * 70)
+            print("  AETHERFLOW -- Running Silently in Background")
+            print("  Passively monitoring ocular biometrics & peripheral kinetics.")
+            print("  Closed-loop ergonomics & screen warmth adaptation active.")
+            print(f"  Active Session ID : {self.session_id}")
+            print("  -> Generate your productivity report anytime by running:")
+            print("     python -m aetherflow.main --report")
+            print("  -> Stop monitoring: Press Ctrl+C in this terminal")
+            print("=" * 70 + "\n")
 
         iteration = 0
         last_tick_time = time.time()
@@ -165,18 +189,49 @@ class AetherFlowEngine:
                     context_domain=app_context.domain
                 )
 
-                # 6. Analytics
+                # 6. Analytics & Persistence
                 self.analytics.record_tick(inference.state, dt, exec_result.executed)
+                if self.session_id:
+                    self.session_store.log_tick(
+                        session_id=self.session_id,
+                        timestamp=t_start,
+                        dt=dt,
+                        cognitive_state=inference.state.value,
+                        confidence=inference.confidence,
+                        context_domain=app_context.domain.value,
+                        process_name=app_context.process_name,
+                        window_title=app_context.window_title,
+                        ear=vis_sample.ear_mean,
+                        blink_rate=vis_sample.blink_rate_bpm,
+                        perclos=vis_sample.perclos,
+                        gaze_stability=vis_sample.gaze_stability,
+                        keystrokes_per_min=per_sample.keystrokes_per_min,
+                        dwell_time_ms=per_sample.mean_dwell_time_ms,
+                        flight_time_ms=per_sample.mean_flight_time_ms,
+                        mouse_jitter=per_sample.mouse_jitter_index,
+                        screen_warmth_kelvin=exec_result.current_kelvin,
+                        ui_density=exec_result.ui_density.value,
+                        notification_policy=exec_result.notification_policy.value,
+                        adaptation_executed=exec_result.executed
+                    )
 
-                # 7. Render telemetry dashboard
-                self._render_dashboard(
-                    vis_sample=vis_sample,
-                    per_sample=per_sample,
-                    inference=inference,
-                    app_context=app_context,
-                    exec_result=exec_result,
-                    iteration=iteration
-                )
+                # 7. Render telemetry dashboard or periodic background pulse
+                if not self.quiet_mode:
+                    self._render_dashboard(
+                        vis_sample=vis_sample,
+                        per_sample=per_sample,
+                        inference=inference,
+                        app_context=app_context,
+                        exec_result=exec_result,
+                        iteration=iteration
+                    )
+                else:
+                    if iteration > 0 and iteration % 30 == 0:
+                        elapsed_min = int((time.time() - self.analytics.start_time) / 60)
+                        print(f"[{time.strftime('%H:%M:%S')}] Monitoring ({elapsed_min}m elapsed) | "
+                              f"State: {inference.state.value} ({int(inference.confidence*100)}%) | "
+                              f"Domain: {app_context.domain.value} ({app_context.process_name}) | "
+                              f"Warmth: {exec_result.current_kelvin}K")
 
                 iteration += 1
                 if max_iterations is not None and iteration >= max_iterations:
@@ -192,6 +247,9 @@ class AetherFlowEngine:
         finally:
             self.stop()
             self._print_session_summary()
+            if self.auto_report and self.session_id:
+                from aetherflow.report import generate_report
+                generate_report(session_id=self.session_id, open_browser=True)
 
     def _render_dashboard(
         self,
@@ -248,6 +306,16 @@ class AetherFlowEngine:
 
     def _print_session_summary(self) -> None:
         """Display final analytics report upon shutdown."""
+        if self.session_id:
+            try:
+                metrics = self.session_store.compute_session_metrics(self.session_id)
+                if metrics:
+                    from aetherflow.report import print_cli_report
+                    print_cli_report(metrics)
+                    return
+            except Exception as e:
+                logger.debug(f"Fallback to basic summary: {e}")
+
         total_time = sum(self.analytics.state_durations.values())
         print("\n" + "=" * 60)
         print("          AETHERFLOW SESSION SUMMARY REPORT")
@@ -301,6 +369,11 @@ def main() -> None:
     parser.add_argument("--adaptation-interval", type=float, default=None, help="Minimum interval in seconds between display adjustments (default: 30.0)")
     parser.add_argument("--transition-duration", type=float, default=None, help="Gradual fade duration in seconds (default: 4.0)")
     parser.add_argument("--gui", action="store_true", help="Launch dedicated desktop visual window with live camera feed")
+    parser.add_argument("--background", "--quiet", dest="background", action="store_true", help="Run silently in the background while you work")
+    parser.add_argument("--report", action="store_true", help="Generate and display productivity report and exit")
+    parser.add_argument("--session-id", type=str, default=None, help="Target specific session ID for report (defaults to latest)")
+    parser.add_argument("--no-browser", action="store_true", help="Do not auto-open report in web browser")
+    parser.add_argument("--auto-report", action="store_true", help="Automatically generate and open productivity report on shutdown")
     parser.add_argument("--train", action="store_true", help="Pre-train cognitive classifier model before starting")
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging")
     
@@ -308,6 +381,11 @@ def main() -> None:
 
     log_level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(level=log_level, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    if args.report:
+        from aetherflow.report import generate_report
+        generate_report(session_id=args.session_id, open_browser=not args.no_browser)
+        return
 
     if args.train:
         print("[AetherFlow] Training classifier model...")
@@ -320,7 +398,11 @@ def main() -> None:
         run_gui(config)
         return
 
-    engine = AetherFlowEngine(config)
+    engine = AetherFlowEngine(
+        config=config,
+        quiet_mode=args.background,
+        auto_report=args.auto_report
+    )
     engine.run_loop(interval_sec=args.interval, max_iterations=args.iterations)
 
 

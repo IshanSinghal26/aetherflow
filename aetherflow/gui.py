@@ -41,8 +41,10 @@ from aetherflow.config import (
 from aetherflow.context.app_detector import ActiveAppContext, AppDetector
 from aetherflow.engine.classifier import CognitiveClassifier, CognitiveInference
 from aetherflow.engine.feature_buffer import FeatureBuffer
+from aetherflow.report import generate_report
 from aetherflow.sensing.peripheral_tracker import PeripheralSample, PeripheralTracker
 from aetherflow.sensing.vision_tracker import VisionSample, VisionTracker
+from aetherflow.storage import SessionStore
 
 logger = logging.getLogger("aetherflow.gui")
 
@@ -84,6 +86,11 @@ class AetherFlowApp(tk.Tk):
         self.geometry("1260x820")
         self.minsize(1100, 750)
         self.configure(bg=BG_MAIN)
+
+        # Persistence & Analytics
+        self.session_store = SessionStore()
+        self.session_id = self.session_store.start_session()
+        self._last_log_time = 0.0
 
         # Engine Components
         self.vision_tracker = VisionTracker(self.config.vision)
@@ -153,9 +160,40 @@ class AetherFlowApp(tk.Tk):
         )
         subtitle_lbl.pack(side=tk.LEFT, padx=(12, 0))
 
-        # Status badge
+        # Status badge & Action buttons
         status_box = tk.Frame(header_frame, bg=BG_CARD)
         status_box.pack(side=tk.RIGHT)
+
+        self.btn_report = tk.Button(
+            status_box,
+            text="📊 Productivity Report",
+            font=("Segoe UI", 9, "bold"),
+            bg="#0284c7",
+            fg="#ffffff",
+            activebackground="#0369a1",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            command=self._on_generate_report
+        )
+        self.btn_report.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.btn_min_bg = tk.Button(
+            status_box,
+            text="🗕 Run in Background",
+            font=("Segoe UI", 9),
+            bg=BG_CARD_LIGHT,
+            fg=TEXT_PRIMARY,
+            activebackground=BORDER_COLOR,
+            relief=tk.FLAT,
+            padx=10,
+            pady=4,
+            cursor="hand2",
+            command=self._minimize_to_background
+        )
+        self.btn_min_bg.pack(side=tk.LEFT, padx=(0, 15))
 
         self.status_dot = tk.Label(status_box, text="●", font=("Segoe UI", 12), fg=ACCENT_GREEN, bg=BG_CARD)
         self.status_dot.pack(side=tk.LEFT, padx=(0, 6))
@@ -555,7 +593,34 @@ class AetherFlowApp(tk.Tk):
             context_domain=app_context.domain
         )
 
-        # 6. Update GUI Displays
+        # 6. Persistent Telemetry Logging (~1.0 Hz cadence)
+        if (t_now - self._last_log_time) >= 1.0:
+            self._last_log_time = t_now
+            if self.session_id:
+                self.session_store.log_tick(
+                    session_id=self.session_id,
+                    timestamp=t_now,
+                    dt=1.0,
+                    cognitive_state=inference.state.value,
+                    confidence=inference.confidence,
+                    context_domain=app_context.domain.value,
+                    process_name=app_context.process_name,
+                    window_title=app_context.window_title,
+                    ear=vis_sample.ear_mean,
+                    blink_rate=vis_sample.blink_rate_bpm,
+                    perclos=vis_sample.perclos,
+                    gaze_stability=vis_sample.gaze_stability,
+                    keystrokes_per_min=per_sample.keystrokes_per_min,
+                    dwell_time_ms=per_sample.mean_dwell_time_ms,
+                    flight_time_ms=per_sample.mean_flight_time_ms,
+                    mouse_jitter=per_sample.mouse_jitter_index,
+                    screen_warmth_kelvin=exec_res.current_kelvin,
+                    ui_density=exec_res.ui_density.value,
+                    notification_policy=exec_res.notification_policy.value,
+                    adaptation_executed=exec_res.executed
+                )
+
+        # 7. Update GUI Displays
         self._update_dashboard_ui(vis_sample, per_sample, inference, app_context, exec_res)
 
         self.after(100, self._engine_tick)
@@ -665,11 +730,32 @@ class AetherFlowApp(tk.Tk):
         self.pacing_lbl.configure(text=f"Ready ({int_sec}s interval)", fg=ACCENT_GREEN)
         logger.info(f"Adaptation interval set to {seconds} seconds.")
 
+    def _minimize_to_background(self) -> None:
+        """Minimize the GUI window to the system taskbar so it continues running silently."""
+        self.iconify()
+        logger.info("AetherFlow GUI minimized to background.")
+
+    def _on_generate_report(self) -> None:
+        """Trigger on-demand productivity report generation in background thread."""
+        def _worker() -> None:
+            try:
+                self.session_store.flush()
+                report_path = generate_report(session_id=self.session_id, open_browser=True)
+                if report_path:
+                    logger.info(f"Productivity report generated: {report_path}")
+            except Exception as e:
+                logger.error(f"Failed to generate productivity report: {e}")
+
+        # Non-blocking launch so GUI doesn't pause
+        threading.Thread(target=_worker, daemon=True).start()
+
     def on_closing(self) -> None:
         """Safe shutdown when user closes window."""
         logger.info("GUI window closed. Terminating background threads...")
         self.vision_tracker.stop()
         self.peripheral_tracker.stop()
+        if self.session_id:
+            self.session_store.close_session(self.session_id)
         self.adaptation_executor.restore_display()
         self.destroy()
 

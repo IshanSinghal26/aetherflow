@@ -358,6 +358,58 @@ To ensure screen adjustments never disrupt the user's creative flow with sudden 
 
 ---
 
+---
+
+## 6. Productivity & Cognitive Health Session Reports
+
+AetherFlow continuously logs anonymized telemetry ticks to local SQLite storage (`data/aetherflow_sessions.db`). You can run AetherFlow silently in the background while you work, and request an executive report whenever you wish.
+
+### 6.1 Report Metrics & Mathematical Formulations
+
+#### 1. Productivity Score (0 – 100)
+A weighted composite index evaluating sustained cognitive output versus distracting context-switching and mental exhaustion:
+
+$$\text{Productivity Score} = 100 \cdot \max\left(0, \min\left(1, \frac{1.0 \cdot t_{\text{flow}} + 0.80 \cdot t_{\text{focus}} - 0.35 \cdot t_{\text{overload}} - 0.25 \cdot t_{\text{fatigue}}}{t_{\text{active}}}\right)\right)$$
+
+- **85 – 100 (Deep Mastery)**: High proportion of deep flow with negligible cognitive overload or eye strain.
+- **70 – 84 (Solid Productivity)**: Good productive equilibrium with normal cognitive pacing.
+- **50 – 69 (Fragmented Focus)**: Elevated task-switching or micro-distractions.
+- **< 50 (Cognitive Strain / Exhaustion)**: Prolonged overload or fatigue. Rest is strongly indicated.
+
+#### 2. Flow Immersion Ratio (%)
+$$\text{Flow Immersion} = \frac{t_{\text{flow}}}{t_{\text{active}}} \times 100\%$$
+Quantifies the percentage of your active work time spent in uninterrupted deep creative focus.
+
+#### 3. Ocular Fatigue Index (0 – 100)
+$$\text{Fatigue Index} = \min\left(100, \frac{\overline{\text{PERCLOS}}}{0.20} \times 100\right)$$
+Evaluates eyelid droop and pupil occlusion relative to the 20% critical drowsiness benchmark.
+
+#### 4. Motor Smoothness Score (0 – 100)
+$$\text{Smoothness} = 60 \cdot \overline{\text{GazeStability}} + 40 \cdot \left(1.0 - \min(1.0, 2.5 \cdot \overline{\text{MouseJitter}})\right)$$
+Combines ocular gaze tracking with mouse trajectory calmness to detect physical tension and motor agitation.
+
+---
+
+### 6.2 Running in the Background & Requesting Reports
+
+1. **Start Background Monitoring**:
+   ```bash
+   python -m aetherflow.main --background
+   ```
+   *Runs silently in the background. Screen adaptations and ergonomics continue to protect you.*
+
+2. **Generate Your Report Anytime**:
+   ```bash
+   python -m aetherflow.main --report
+   ```
+   *Immediately compiles your session statistics and opens a beautiful interactive glassmorphic HTML report in your browser (`reports/productivity_report_<timestamp>.html`).*
+
+3. **From the Dedicated Desktop GUI**:
+   - Click the **"📊 Productivity Report"** button in the top navigation bar at any time.
+   - Click **"🗕 Run in Background"** to minimize the HUD to your taskbar while you work.
+
+---
+
 ## Summary Reference Table
 
 | Metric | Normal Alert Range | Flow Indicator | Overload Indicator | Fatigue Indicator |
@@ -372,3 +424,4 @@ To ensure screen adjustments never disrupt the user's creative flow with sudden 
 | **Mouse Jitter** | `0.08 - 0.18` | `< 0.10` (calm) | `> 0.35` (chaotic) | `0.15 - 0.25` (slow) |
 | **Typing Cadence**| `100 - 180 KPM`| `> 200 KPM` | `Choppy bursts` | `< 60 KPM` |
 | **Adaptation Pacing**| `30s Cooldown`| `Locked during flow` | `Hold until sustained`| `Soft 4.0s fade` |
+| **Productivity Score**| `70 - 100` | `85 - 100` | `< 60` | `< 50` |

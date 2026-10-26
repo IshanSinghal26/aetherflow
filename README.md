@@ -5,7 +5,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Zero Cloud APIs](https://img.shields.io/badge/Privacy-100%25%20Local-success.svg)]()
-[![Tests: 30 Passed](https://img.shields.io/badge/Tests-30%20Passed-brightgreen.svg)]()
+[![Tests: 34 Passed](https://img.shields.io/badge/Tests-34%20Passed-brightgreen.svg)]()
 
 ---
 
@@ -178,30 +178,58 @@ python -m aetherflow.gui
 python -m aetherflow.main --gui
 ```
 
-### 3. Launch Headless / Terminal Engine
-Start the background closed loop in terminal-only mode:
+### 3. Run Silently in the Background While You Work
+To have AetherFlow run unobtrusively in the background without flooding your terminal while you complete your work:
 
 ```bash
-python -m aetherflow.main
+# Run silently in background mode
+python -m aetherflow.main --background
+```
+In background mode:
+- All biometrics (eyes, blinks, posture) and peripheral kinetics (keystroke flight/dwell, mouse jitter) are passively monitored.
+- Screen warmth and UI adaptations continue to protect your eyes and preserve deep flow state.
+- Data is securely buffered and logged to local SQLite (`data/aetherflow_sessions.db`).
+- Press `Ctrl+C` at any time to finish your workday and view your session summary.
+
+---
+
+### 4. On-Demand Productivity & Cognitive Health Reports
+Whenever you want to inspect your focus, flow time, and cognitive efficiency, generate a comprehensive report:
+
+```bash
+# Generate report for latest session and auto-open interactive HTML dashboard in browser
+python -m aetherflow.main --report
+
+# Or generate CLI summary only (no browser popup)
+python -m aetherflow.main --report --no-browser
+
+# Target a specific past session
+python -m aetherflow.main --report --session-id sess_1792950239_3528e0
 ```
 
-### 4. Command-Line Options
+> **Tip (From the GUI)**: In desktop window mode (`python -m aetherflow.main --gui`), simply click the **"📊 Productivity Report"** button in the header bar or click **"🗕 Run in Background"** to minimize the dashboard while you focus.
+
+---
+
+### 5. Command-Line Options
 | Flag | Description |
 | :--- | :--- |
 | `--gui` | **Launch dedicated desktop visual window with live camera feed** |
+| `--background` / `--quiet` | **Run silently in background while you work (passive telemetry logging)** |
+| `--report` | **Generate and display interactive productivity report and exit** |
+| `--session-id <ID>` | Target a specific past session for reporting (defaults to latest) |
+| `--no-browser` | Output CLI summary report without auto-opening web browser |
+| `--auto-report` | Automatically generate and launch HTML report upon session shutdown |
+| `--adaptation-interval <SEC>` | Minimum interval between display adjustments (default: `30.0`s) |
+| `--transition-duration <SEC>` | Smooth cosine S-curve transition fade duration (default: `4.0`s) |
 | `--dry-run` | Run in simulation mode without writing to hardware display gamma ramp |
-| `--synthetic-sensing` | Generate simulated biometric telemetry (for headless CI or machines without webcam) |
+| `--synthetic-sensing` | Generate simulated biometric telemetry (for CI or machines without webcam) |
 | `--camera-id <ID>` | Specify webcam index (default: `0`) |
 | `--window-size <SEC>` | Sliding feature aggregation window in seconds (default: `60.0`) |
 | `--interval <SEC>` | Main loop tick interval in seconds (default: `1.0`) |
-| `--iterations <N>` | Run for $N$ iterations and cleanly exit (useful for automated jobs) |
+| `--iterations <N>` | Run for $N$ iterations and cleanly exit |
 | `--train` | Automatically pre-train model before starting the engine |
 | `--debug` | Output detailed internal engine diagnostics |
-
-**Example (Dedicated Visual Window in Simulation Mode):**
-```bash
-python -m aetherflow.main --gui --dry-run
-```
 
 ---
 
@@ -268,21 +296,27 @@ aetherflow/
 │   │   ├── __init__.py
 │   │   └── train_synthetic.py        # Telemetry generator, ML trainer, and evaluation reporter
 │   │
+│   ├── storage.py                    # SQLite persistence layer for session logs & telemetry ticks
+│   ├── report.py                     # On-demand executive HTML & CLI productivity report generator
 │   ├── gui.py                        # Dedicated real-time desktop GUI with camera viewport & HUD
-│   └── main.py                       # Non-blocking orchestrator, event loop & console dashboard
+│   └── main.py                       # Non-blocking orchestrator, event loop, background mode & CLI
 │
 ├── data/                             # Serialized models and assets
 │   ├── cognitive_classifier.joblib   # Trained RandomForest classifier
 │   ├── scaler.joblib                 # Trained StandardScaler
-│   └── face_landmarker.task          # MediaPipe FaceLandmarker model asset
+│   ├── face_landmarker.task          # MediaPipe FaceLandmarker model asset
+│   └── aetherflow_sessions.db        # Local SQLite database storing session history
 │
-├── tests/                            # Comprehensive automated pytest suite (30/30 passed)
+├── reports/                          # Generated interactive glassmorphic HTML productivity reports
+│
+├── tests/                            # Comprehensive automated pytest suite (34/34 passed)
 │   ├── __init__.py
 │   ├── test_sensing.py
 │   ├── test_feature_buffer.py
 │   ├── test_classifier.py
 │   ├── test_context.py
 │   ├── test_adaptation.py
+│   ├── test_storage_report.py
 │   └── test_end_to_end.py
 │
 ├── METRICS_GUIDE.md                  # Comprehensive breakdown of all telemetry metrics

@@ -8,3 +8,10 @@ htmlcov/
 .env
 venv/
 .venv/
+
+# Session persistence & personal report exports
+data/*.db
+data/*.db-wal
+data/*.db-shm
+reports/*.html
+
