@@ -78,7 +78,8 @@ class AetherFlowEngine:
         self,
         config: Optional[AetherFlowConfig] = None,
         quiet_mode: bool = False,
-        auto_report: bool = False
+        auto_report: bool = False,
+        web_mode: bool = False
     ) -> None:
         self.config = config or AetherFlowConfig()
         self.config.ensure_directories()
@@ -89,6 +90,17 @@ class AetherFlowEngine:
         self.session_id: Optional[str] = None
         self.quiet_mode = quiet_mode
         self.auto_report = auto_report
+        self.web_mode = web_mode
+        self.web_server = None
+
+        if self.web_mode:
+            from aetherflow.web_server import start_web_server
+            self.web_server = start_web_server()
+            try:
+                import webbrowser
+                webbrowser.open("http://127.0.0.1:8765")
+            except Exception as e:
+                logger.debug(f"Could not auto-open browser for web dashboard: {e}")
 
         logger.info("Initializing AetherFlow layers...")
 
@@ -138,6 +150,8 @@ class AetherFlowEngine:
         self.peripheral_tracker.stop()
         if self.session_id:
             self.session_store.close_session(self.session_id)
+        if self.web_server:
+            self.web_server.stop()
         self.adaptation_executor.restore_display()
         logger.info("AetherFlow stopped successfully.")
 
@@ -215,7 +229,34 @@ class AetherFlowEngine:
                         adaptation_executed=exec_result.executed
                     )
 
-                # 7. Render telemetry dashboard or periodic background pulse
+                # 7. Sync with web dashboard if active
+                if self.web_server:
+                    from aetherflow.web_server import dashboard_state
+                    elapsed_s = int(t_start - self.analytics.start_time)
+                    hh = elapsed_s // 3600
+                    mm = (elapsed_s % 3600) // 60
+                    ss = elapsed_s % 60
+                    prod_score = 92.0 if inference.state == CognitiveState.FLOW else (78.0 if inference.state == CognitiveState.NORMAL_FOCUS else 45.0)
+                    dashboard_state.update_telemetry({
+                        "session_time": f"{hh:02d}:{mm:02d}:{ss:02d}",
+                        "state": inference.state.value,
+                        "state_title": inference.state.value.replace("_", " ").title(),
+                        "state_desc": f"Engaged in {app_context.domain.value} context.",
+                        "productivity_score": prod_score,
+                        "wpm": per_sample.keystrokes_per_min / 5.0,
+                        "kpm": per_sample.keystrokes_per_min,
+                        "bpm": vis_sample.blink_rate_bpm,
+                        "ear": vis_sample.ear_mean,
+                        "perclos": vis_sample.perclos,
+                        "gaze": vis_sample.gaze_stability,
+                        "kelvin": exec_result.current_kelvin,
+                        "density": exec_result.ui_density.value,
+                        "dnd": exec_result.notification_policy.value,
+                        "context": f"{app_context.process_name} — {app_context.window_title}",
+                        "probabilities": {k.lower(): v for k, v in inference.probabilities.items()}
+                    })
+
+                # 8. Render telemetry dashboard or periodic background pulse
                 if not self.quiet_mode:
                     self._render_dashboard(
                         vis_sample=vis_sample,
@@ -369,6 +410,7 @@ def main() -> None:
     parser.add_argument("--adaptation-interval", type=float, default=None, help="Minimum interval in seconds between display adjustments (default: 30.0)")
     parser.add_argument("--transition-duration", type=float, default=None, help="Gradual fade duration in seconds (default: 4.0)")
     parser.add_argument("--gui", action="store_true", help="Launch dedicated desktop visual window with live camera feed")
+    parser.add_argument("--web", action="store_true", help="Launch live modern 4-tab web dashboard in browser (http://127.0.0.1:8765)")
     parser.add_argument("--background", "--quiet", dest="background", action="store_true", help="Run silently in the background while you work")
     parser.add_argument("--report", action="store_true", help="Generate and display productivity report and exit")
     parser.add_argument("--session-id", type=str, default=None, help="Target specific session ID for report (defaults to latest)")
@@ -401,7 +443,8 @@ def main() -> None:
     engine = AetherFlowEngine(
         config=config,
         quiet_mode=args.background,
-        auto_report=args.auto_report
+        auto_report=args.auto_report,
+        web_mode=args.web
     )
     engine.run_loop(interval_sec=args.interval, max_iterations=args.iterations)
 

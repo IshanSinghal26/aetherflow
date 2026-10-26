@@ -49,27 +49,27 @@ from aetherflow.storage import SessionStore
 logger = logging.getLogger("aetherflow.gui")
 
 # =====================================================================
-# Visual Palette (Cockpit Obsidian / Glassmorphic Slate)
+# Visual Palette (Linear / Raycast Clean Matte Dark Theme)
 # =====================================================================
-BG_MAIN = "#070b12"        # Deep Obsidian Void
-BG_CARD = "#0d1526"        # Deep Navy HUD Card
-BG_CARD_LIGHT = "#152238"  # Elevated Container / Card Section
-BG_TILE = "#101b2f"        # Elevated Biometric KPI Tile
-BORDER_COLOR = "#1e2c47"   # High-Tech Crisp Border
-BORDER_ACCENT = "#38bdf8"  # Cyan Accent Border
+BG_MAIN = "#0f0f11"        # Matte Charcoal Void
+BG_CARD = "#18181b"        # Zinc-900 Primary Panel
+BG_CARD_LIGHT = "#222226"  # Zinc-850 Container
+BG_TILE = "#18181b"        # Clean Matte Metric Tile
+BORDER_COLOR = "#27272a"   # Clean 1px Zinc Border
+BORDER_ACCENT = "#10b981"  # Emerald Accent
 
-TEXT_PRIMARY = "#f8fafc"   # Slate 50 High Contrast
-TEXT_SECONDARY = "#94a3b8" # Slate 400 Readable Secondary
-TEXT_MUTED = "#64748b"     # Slate 500 Subtle Captions
+TEXT_PRIMARY = "#f4f4f5"   # Zinc-100 High Contrast
+TEXT_SECONDARY = "#a1a1aa" # Zinc-400 Readable Secondary
+TEXT_MUTED = "#71717a"     # Zinc-500 Muted Captions
 
 # Accent States
-ACCENT_CYAN = "#06b6d4"    # Focus / HUD Telemetry
+ACCENT_CYAN = "#0284c7"    # Focus / Sky Accent
 ACCENT_BLUE = "#0284c7"    # Primary Action
-ACCENT_GREEN = "#10b981"   # Flow / Optimal State
-ACCENT_AMBER = "#f59e0b"   # Overload / Warning
-ACCENT_RED = "#ef4444"     # Fatigue / Strain Alert
-ACCENT_PURPLE = "#8b5cf6"  # Deep Focus / Code
-ACCENT_SLATE = "#475569"   # Idle / Standby
+ACCENT_GREEN = "#10b981"   # Flow / Emerald
+ACCENT_AMBER = "#f59e0b"   # Overload / Amber
+ACCENT_RED = "#ef4444"     # Fatigue / Red
+ACCENT_PURPLE = "#8b5cf6"  # Context Accent
+ACCENT_SLATE = "#64748b"   # Idle / Standby
 
 DOMAIN_COLORS: dict[str, tuple[str, str]] = {
     ContextDomain.CODE_IDE.value: ("#4f46e5", "#ffffff"),
@@ -200,6 +200,23 @@ class AetherFlowApp(tk.Tk):
         # Status badge, Session Clock & Action buttons
         status_box = tk.Frame(header_frame, bg=BG_CARD)
         status_box.pack(side=tk.RIGHT)
+
+        self.btn_web_dash = tk.Button(
+            status_box,
+            text="🌐 Web Dashboard",
+            font=("Segoe UI", 9, "bold"),
+            bg="#10b981",
+            fg="#ffffff",
+            activebackground="#059669",
+            activeforeground="#ffffff",
+            relief=tk.FLAT,
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            command=self._open_web_dashboard
+        )
+        self.btn_web_dash.pack(side=tk.LEFT, padx=(0, 10))
+        _bind_hover(self.btn_web_dash, "#10b981", "#059669")
 
         self.btn_report = tk.Button(
             status_box,
@@ -802,7 +819,40 @@ class AetherFlowApp(tk.Tk):
                     adaptation_executed=exec_res.executed
                 )
 
-        # 7. Update GUI Displays
+        # 7. Sync with Web Dashboard if active
+        if hasattr(self, "_web_server") and self._web_server is not None:
+            from aetherflow.web_server import dashboard_state
+            # Check for override commands from web
+            if dashboard_state.override_state is not None:
+                for cs in CognitiveState:
+                    if cs.value == dashboard_state.override_state:
+                        self.simulated_state = cs
+                        break
+                if dashboard_state.override_state == "null":
+                    self.simulated_state = None
+            if dashboard_state.minimize_requested:
+                dashboard_state.minimize_requested = False
+                self._minimize_to_background()
+
+            dashboard_state.update_telemetry({
+                "session_time": f"{hh:02d}:{mm:02d}:{ss:02d}",
+                "state": inference.state.value,
+                "state_title": inference.state.value.replace("_", " ").title(),
+                "productivity_score": 92.0 if inference.state == CognitiveState.FLOW else (78.0 if inference.state == CognitiveState.NORMAL_FOCUS else 45.0),
+                "wpm": per_sample.keystrokes_per_min / 5.0,
+                "kpm": per_sample.keystrokes_per_min,
+                "bpm": vis_sample.blink_rate_bpm,
+                "ear": vis_sample.ear_mean,
+                "perclos": vis_sample.perclos,
+                "gaze": vis_sample.gaze_stability,
+                "kelvin": exec_res.current_kelvin,
+                "density": exec_res.ui_density.value,
+                "dnd": exec_res.notification_policy.value,
+                "context": f"{app_context.process_name} — {app_context.window_title}",
+                "probabilities": {k.lower(): v for k, v in inference.probabilities.items()}
+            })
+
+        # 8. Update GUI Displays
         self._update_dashboard_ui(vis_sample, per_sample, inference, app_context, exec_res)
 
         self.after(100, self._engine_tick)
@@ -964,9 +1014,22 @@ class AetherFlowApp(tk.Tk):
         # Non-blocking launch so GUI doesn't pause
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _open_web_dashboard(self) -> None:
+        """Launch the modern 4-tab Linear/Raycast web dashboard in browser."""
+        import webbrowser
+        from aetherflow.web_server import start_web_server
+        if not hasattr(self, "_web_server") or self._web_server is None:
+            self._web_server = start_web_server()
+        try:
+            webbrowser.open("http://127.0.0.1:8765")
+        except Exception as e:
+            logger.debug(f"Could not open browser: {e}")
+
     def on_closing(self) -> None:
         """Safe shutdown when user closes window."""
         logger.info("GUI window closed. Terminating background threads...")
+        if hasattr(self, "_web_server") and self._web_server is not None:
+            self._web_server.stop()
         self.vision_tracker.stop()
         self.peripheral_tracker.stop()
         if self.session_id:
