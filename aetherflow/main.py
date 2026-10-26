@@ -411,6 +411,7 @@ def main() -> None:
     parser.add_argument("--transition-duration", type=float, default=None, help="Gradual fade duration in seconds (default: 4.0)")
     parser.add_argument("--gui", action="store_true", help="Launch dedicated desktop visual window with live camera feed")
     parser.add_argument("--web", action="store_true", help="Launch live modern 4-tab web dashboard in browser (http://127.0.0.1:8765)")
+    parser.add_argument("--cli", action="store_true", help="Run in terminal console mode without visual window")
     parser.add_argument("--background", "--quiet", dest="background", action="store_true", help="Run silently in the background while you work")
     parser.add_argument("--report", action="store_true", help="Generate and display productivity report and exit")
     parser.add_argument("--session-id", type=str, default=None, help="Target specific session ID for report (defaults to latest)")
@@ -435,7 +436,10 @@ def main() -> None:
 
     config = build_config(args)
 
-    if args.gui:
+    # Launch GUI if explicitly requested or if running interactively with no headless flags
+    should_launch_gui = args.gui or (not args.background and not args.cli and not args.web and args.iterations is None)
+
+    if should_launch_gui:
         from aetherflow.gui import run_gui
         run_gui(config)
         return

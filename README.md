@@ -214,7 +214,9 @@ python -m aetherflow.main --report --session-id sess_1792950239_3528e0
 ### 5. Command-Line Options
 | Flag | Description |
 | :--- | :--- |
-| `--gui` | **Launch dedicated desktop visual window with live camera feed** |
+| *(default)* / `--gui` | **Launch dedicated desktop visual window with 4-tab Linear/Raycast UI and live camera feed** |
+| `--web` | **Launch live modern 4-tab web dashboard in default browser (http://127.0.0.1:8765)** |
+| `--cli` | **Run in terminal console mode with live text HUD (no GUI window)** |
 | `--background` / `--quiet` | **Run silently in background while you work (passive telemetry logging)** |
 | `--report` | **Generate and display interactive productivity report and exit** |
 | `--session-id <ID>` | Target a specific past session for reporting (defaults to latest) |

@@ -163,7 +163,7 @@ class AdaptationExecutor:
                 )
 
             # Hysteresis debouncing
-            if force_immediate:
+            if force_immediate or is_color_critical:
                 should_execute = True
                 self._hysteresis_counter = self.config.hysteresis_ticks
             else:
