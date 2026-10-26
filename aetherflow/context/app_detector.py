@@ -109,6 +109,11 @@ class AppDetector:
     DEV_TITLE_KEYWORDS = [
         "github", "gitlab", "stack overflow", "chatgpt", "claude", "docs.python.org", "w3schools"
     ]
+    CREATIVE_TITLE_KEYWORDS = [
+        "figma", "canva", "photopea", "spline", "framer", "behance", "dribbble", "sketch",
+        "pixlr", "vector", "tinkercad", "fusion 360", "autocad", "blender", "illustrator",
+        "photoshop", "invision", "miro", "coreldraw"
+    ]
 
     def __init__(self, mock_domain: Optional[ContextDomain] = None) -> None:
         self.mock_domain = mock_domain
@@ -229,7 +234,11 @@ class AppDetector:
         if proc in self.PROCESS_DOMAIN_MAP:
             return self.PROCESS_DOMAIN_MAP[proc]
 
-        # 2. Browser tab heuristic classification
+        # 2. Creative / Design priority (identifies Figma, Canva, etc. in any browser tab or desktop wrapper)
+        if any(term in title_lower for term in self.CREATIVE_TITLE_KEYWORDS):
+            return ContextDomain.CREATIVE_DESIGN
+
+        # 3. Browser tab heuristic classification
         if proc in self.BROWSER_PROCESSES:
             for kw in self.MEDIA_TITLE_KEYWORDS:
                 if kw in title_lower:
@@ -242,11 +251,9 @@ class AppDetector:
                     return ContextDomain.CODE_IDE
             return ContextDomain.RESEARCH_BROWSING
 
-        # 3. Window title substring heuristics
+        # 4. Window title substring heuristics
         if any(ext in title_lower for ext in [".py", ".ts", ".js", ".rs", ".go", ".cpp", "visual studio code", "intellij"]):
             return ContextDomain.CODE_IDE
-        if any(term in title_lower for term in ["figma", "photoshop", "blender", "illustrator", "canvas"]):
-            return ContextDomain.CREATIVE_DESIGN
         if any(term in title_lower for term in ["word", "notion", "obsidian", "document"]):
             return ContextDomain.WRITING_TEXT
 

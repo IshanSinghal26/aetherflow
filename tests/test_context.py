@@ -36,6 +36,11 @@ class TestAppDetector:
         assert detector._classify_domain("msedge.exe", "Research Paper - Google Docs") == ContextDomain.WRITING_TEXT
         # GitHub in Firefox
         assert detector._classify_domain("firefox.exe", "GitHub - deepmind/aetherflow") == ContextDomain.CODE_IDE
+        # Figma in Chrome/Edge/Brave
+        assert detector._classify_domain("chrome.exe", "Mobile App UI – Figma - Google Chrome") == ContextDomain.CREATIVE_DESIGN
+        assert detector._classify_domain("msedge.exe", "Design System – Figma - Microsoft Edge") == ContextDomain.CREATIVE_DESIGN
+        # Canva in Firefox
+        assert detector._classify_domain("firefox.exe", "Canva - Presentation Banner") == ContextDomain.CREATIVE_DESIGN
         # Generic browsing
         assert detector._classify_domain("chrome.exe", "Wikipedia, the free encyclopedia") == ContextDomain.RESEARCH_BROWSING
 

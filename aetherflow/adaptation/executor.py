@@ -124,6 +124,12 @@ class AdaptationExecutor:
             in_cooldown = (elapsed_since_last < self.config.min_adaptation_interval_sec)
             remaining_cooldown = max(0.0, self.config.min_adaptation_interval_sec - elapsed_since_last)
 
+            # Color fidelity override: Switching to creative design (Figma, Canva, Photoshop)
+            # must restore true daylight 6500K without waiting out a prior cooldown.
+            is_color_critical = (context_domain == ContextDomain.CREATIVE_DESIGN and intent.target_kelvin >= 6000)
+            if is_color_critical:
+                in_cooldown = False
+
             if not is_different:
                 # Stable state, reset pending counter
                 self._pending_intent = None

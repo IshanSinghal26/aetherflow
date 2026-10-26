@@ -120,6 +120,20 @@ class TestAdaptationExecutor:
         assert res_forced.executed is True
         assert res_forced.current_kelvin == 3000
 
+    def test_creative_design_bypasses_interval_cooldown_for_color_fidelity(self):
+        cfg = AdaptationConfig(hysteresis_ticks=1, min_adaptation_interval_sec=30.0, dry_run=True)
+        executor = AdaptationExecutor(cfg)
+
+        # Transition into IDE (4200K) locks cooldown for 30s
+        res1 = executor.dispatch(CognitiveState.FLOW, ContextDomain.CODE_IDE, force_immediate=False)
+        assert res1.executed is True
+        assert res1.current_kelvin == 4200
+
+        # Switching to Creative Design (e.g. Figma, Canva) must immediately restore 6500K daylight
+        res2 = executor.dispatch(CognitiveState.FLOW, ContextDomain.CREATIVE_DESIGN, force_immediate=False)
+        assert res2.executed is True
+        assert res2.current_kelvin == 6500
+
     def test_safe_restore_display(self):
         cfg = AdaptationConfig(dry_run=True)
         executor = AdaptationExecutor(cfg)
